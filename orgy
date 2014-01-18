@@ -64,12 +64,14 @@ post '/user/regme-now' => sub {
 };
 
 group {
-  under '/user' => sub { shift->session('role') ~~ ['user', 'admin'] };
+  under '/user' => sub { $_[0]->session('role') ~~ ['user', 'admin'] ? 1 : $_[0]->render_not_found & 0 };
+  
   get '/my' => sub {
     my $self = shift;
     my @tasks = mdl->new('task')->list({user_id => $self->session('id'), status => 0}, undef, 'deadline');
     $self->render('my', tasks => \@tasks);
   };
+  
   post '/add' => sub {
     my $self = shift;
     my ($prio, $dl, $time, $message) = ($self->param('prio'), $self->param('deadline'),
@@ -270,6 +272,20 @@ body { padding-top: 20px; padding-bottom: 20px; }
 </form>
 </div>
 
+@@ not_found.html.ep
+% layout 'default';
+<div class="jumbotron">
+<h1>Page not found</h1>
+<p>... or you can't see this page without <a href="/user/login">login</a>.</p>
+</div>
+
+@@ exception.html.ep
+% layout 'default';
+<div class="jumbotron">
+<h1>Some error happend</h1>
+<p>... or you can't see this page without <a href="/user/login">login</a>.</p>
+</div>
+
 @@ reg.html.ep
 % layout 'default';
 <div class="jumbotron">
@@ -318,6 +334,11 @@ body { padding-top: 20px; padding-bottom: 20px; }
 </form>
 <div class="cb push"></div>
 % for my $task (@$tasks) {
+  % stash(task => $task);
+  %= include 'task';
+% }
+
+@@ task.html.ep
   <div class="task">
     <div class="prio" style="background: <%= prio_to_color $task->{prio} %>"></div>
 %   my ($s,$i,$h,$day,$mon,$year) = localtime $task->{deadline};
@@ -325,12 +346,11 @@ body { padding-top: 20px; padding-bottom: 20px; }
 %   $mon = "0$mon" if $mon < 10;
 %   $day = "0$day" if $day < 10;
     <%= $year %>.<%= $mon %>.<%= $day %>
-%   $h = int ($task->{time} % 86400) / 3600;
-%   my $d = int $task->{time} / 86400;
+%   $h = int ($task->{time} / 3600) % 24;
+%   my $d = int ($h / 24);
     (<%= $d %>d <%= $h %>h)
     <p><%= $task->{message} %></p>
   </div>
-% }
 
 @@ layouts/default.html.ep
 <!DOCTYPE html>
