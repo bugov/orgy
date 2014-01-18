@@ -5,7 +5,7 @@ Orgy a tiny organizer.
 # Requires
 
 * sqlite3
-* cpan modules: `cpan Mojolicious DBI Time::Local Digest::MD5 DBD::SQLite`
+* cpan modules: `cpan Mojolicious DBI Time::Local Digest::MD5 DBD::SQLite HTML::CalendarMonthSimple`
 
 # Install
 
@@ -17,7 +17,7 @@ Orgy a tiny organizer.
 
 # Copyright and license
 
-Copyright (C) 2011 - 2013, Georgy Bazhukov.
+Copyright (C) 2014, Georgy Bazhukov.
 
 This program is free software, you can redistribute it and/or modify it
 under the terms of the Artistic License version 2.0.

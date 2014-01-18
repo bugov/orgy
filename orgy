@@ -4,6 +4,7 @@ use utf8;
 use DBI;
 use Digest::MD5 qw(md5_hex);
 use Time::Local;
+use HTML::CalendarMonthSimple;
 
 our $dbh = DBI->connect("dbi:SQLite:dbname=./db",'','',{RaiseError => 1, mysql_enable_utf8 => 1, sqlite_unicode => 1}) or die $DBI::errstr;
 
@@ -123,6 +124,44 @@ helper render_user => sub {
             md5_hex(lc($user->{mail}||'')), 20;
   my $url = $user->{id} != $self->session('id') ? app->url_for('profile', id => $user->{id}) : app->url_for('my');
   return new Mojo::ByteStream(sprintf '<a href="%s">%s %s</a>', $url||'', $pic||'', $user->{name}||'');
+};
+
+helper render_cal => sub {
+  my ($self, $tasks) = @_;
+  return unless @$tasks;
+  my $days = int (($tasks->[0]->{deadline} - $tasks->[-1]->{deadline}) / 86400);
+  my ($s,$i,$h,$dn,$mn,$y) = localtime;
+  
+  if ($days <= 1) {
+    # One day
+    my $html = '';
+    $html .= $self->render('task', partial => 1, task => $_) for @$tasks;
+    return Mojo::ByteStream->new($html);
+  } else {
+    # month or more
+    my $html;
+    my ($sec,$min,$hour,$day,$mon,$year) = localtime $tasks->[0]->{deadline};
+    my $cal = new HTML::CalendarMonthSimple(year => 1900+$year, month => $mon+1);
+    $cal->datecolor($dn,'#e0e0e0') if $mn == $mon;
+    $cal->width('100%');
+    $cal->border(0);
+    for my $t (@$tasks) {
+      my ($s,$i,$h,$d,$m,$y) = localtime $t->{deadline};
+      if ($mon != $m) {
+        $mon = $m;
+        $html .= $cal->as_HTML;
+        $cal = new HTML::CalendarMonthSimple(year => 1900+$year, month => $mon+1);
+        $cal->datecolor($dn,'#e0e0e0') if $mn == $mon;
+        $cal->width('100%');
+        $cal->border(0);
+      }
+      
+      $cal->setdatehref($d, $self->url_for('period', from => $t->{deadline}-86400, till => $t->{deadline}+86400));
+      $cal->addcontent($d,'<div class="prio" style="background: '.$self->prio_to_color($t->{prio}).'"></div>');
+    }
+    $html .= $cal->as_HTML;
+    return Mojo::ByteStream->new($html);
+  }
 };
 
 app->start;
@@ -270,6 +309,8 @@ body { padding-top: 20px; padding-bottom: 20px; }
 .prio { width: 20px; min-height: 20px; margin-right: 10px; border: 1px solid #ddd; float: left; }
 .task { background: #f0f0f0; border: 1px solid #e8e8e8; border-radius: 3px; margin: 10px 0px; padding: 5px; }
 .task p { margin: 10px; font-size: 20px; }
+.cal td, .cal th { padding: 5px; }
+.cal table { border: 0px solid #888; color: #888; border-radius: 5px; margin: 20px 0px; }
 
 @@ index.html.ep
 % layout 'default';
@@ -389,10 +430,9 @@ body { padding-top: 20px; padding-bottom: 20px; }
   <textarea name="message" class="form-control" placeholder="Message"></textarea>
 </form>
 <div class="cb push"></div>
-% for my $task (@$tasks) {
-  % stash(task => $task);
-  %= include 'task';
-% }
+<div class="cal">
+  %= render_cal $tasks;
+</div>
 
 @@ task.html.ep
   <div class="task">
