@@ -1,0 +1,339 @@
+#!/usr/bin/env perl
+use Mojolicious::Lite;
+use utf8;
+use DBI;
+use Digest::MD5 qw(md5_hex);
+use Time::Local;
+
+our $dbh = DBI->connect("dbi:SQLite:dbname=./db",'','',{RaiseError => 1, mysql_enable_utf8 => 1, sqlite_unicode => 1}) or die $DBI::errstr;
+
+if ($ARGV[0] eq 'install') {
+  my ($name, $mail, $pass, $salt) = (@ARGV[1..3], substr(md5_hex(rand), 0, 8));
+  $pass = $salt.'$'.md5_hex($pass.$salt);
+  mdl->new->raw('');
+  mdl->new->raw('CREATE TABLE user (id INTEGER PRIMARY KEY AUTOINCREMENT, name VARCHAR(32) UNIQUE, mail VARCHAR(64) UNIQUE, pass VARCHAR(40), role VARCHAR(16))');
+  mdl->new->raw("INSERT INTO user VALUES(1, '$name', '$mail', '$pass', 'admin')");
+  mdl->new->raw('CREATE TABLE task (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, message TEXT,
+    prio INTEGER, deadline INTEGER, create_at INTEGER, time INTEGER, status INTEGER, FOREIGN KEY(user_id) REFERENCES user(id))');
+  say "Done!";
+  exit;
+}
+
+get '/' => sub { shift->render('index') };
+get '/user/login' => sub { shift->render('login') };
+get '/user/logout' => sub { shift->session(id => 0)->redirect_to('/') };
+
+post '/user/login' => sub {
+  my $self = shift;
+  my ($mail, $pass) = ($self->param('mail'), $self->param('pass'));
+  my $user = mdl->new('user')->read(mail => $mail);
+  
+  if ($user) {
+    my ($salt, $enc_pass) = split '\$', $user->{pass};
+    if ($enc_pass eq md5_hex($pass.$salt)) {
+      $self->session(%$user)->redirect_to('/user/my');
+    } else {
+      $self->flash(error => 'Wrong password!')->render('login');
+    }
+  } else {
+    $self->flash(error => "Can't find user!")->render('login');
+  }
+};
+
+group {
+  under '/user' => sub { shift->session('role') ~~ ['user', 'admin'] };
+  get '/my' => sub {
+    my $self = shift;
+    my @tasks = mdl->new('task')->list({user_id => $self->session('id')});
+    $self->render('my', tasks => \@tasks);
+  };
+  post '/add' => sub {
+    my $self = shift;
+    my ($prio, $dl, $time, $message) = ($self->param('prio'), $self->param('deadline'),
+                                        $self->param('time'), $self->param('message'));
+    my ($mday,$mon,$year,$hour,$min,$sec) = split(/[\s.:]+/, $dl);
+    $dl = timelocal($sec,$min,$hour,$mday,$mon-1,$year);
+    my ($val, $type) = ($time =~ /(\d+)([hd]?)/i);
+    $val *= 3600  if $type eq 'h'; # hour
+    $val *= 86400 if $type eq 'd'; # day
+    
+    mdl->new('task')->create({
+      prio => $prio,
+      deadline => $dl,
+      time => $val,
+      message => $message,
+      user_id => $self->session('id')
+    });
+    $self->flash(success => 'Task created')->redirect_to('/user/my');
+  };
+};
+
+helper prio_to_color => sub {
+  my ($self, $prio) = @_;
+  my $colors = ['#fff', '#999', '#428BCA', '#F0AD4E', '#D9534F', '#000'];
+  return $colors->[$prio];
+};
+
+app->start;
+
+# Simple CRUDL
+package mdl;
+
+sub new {
+  my($class, $table_name) = @_;
+  return bless({table => $table_name}, $class);
+}
+
+sub create {
+  my $self = shift;
+  my $data = shift;
+  
+  while(my($k, $v) = each %$data) {
+      $data->{$k} = $main::dbh->quote($v);
+  }
+  
+  my $t = $self->{table};
+  my $k = join '`,`', keys %$data;
+  my $v = join ",", values %$data;
+  
+  $main::dbh->do("INSERT INTO `$t`(`$k`) VALUES($v)");
+  my $sth = $main::dbh->prepare("SELECT last_insert_rowid()");
+     $sth->execute();
+  my $row = $sth->fetchrow_hashref();
+  return $row->{'last_insert_rowid()'};
+}
+
+sub read {
+  my($self, $w, $f) = @_;
+  ($w, $f) = ( {$w, $f}, undef ) if ref $w ne 'HASH';
+  my($order) = keys %$w;
+  return [ $self->list($w, $f, $order, undef, 0, 1) ]->[0];
+}
+
+sub update {
+  my($self, $data, $where) = @_;
+  my @where = $self->_prepare($where);
+  my @data = $self->_prepare($data);
+  my $t = $self->{table};
+  my $w = join ' and ', @where;
+  my $d = join ',', @data;
+  $main::dbh->do("UPDATE `$t` SET $d WHERE $w");
+}
+
+sub delete {
+  my($self, $where) = @_;
+  my @where;
+  
+  if ( $where ) {
+    @where = $self->_prepare($where);
+  } else {
+    push @where, '1=1';
+  }
+  
+  my $t = $self->{table};
+  my $w = join ' and ', @where;
+  $main::dbh->do("DELETE FROM `$t` WHERE $w");
+}
+
+sub list {
+  my($self, $where, $fields, $order, $rule, $offset, $limit) = @_;
+  @$fields = map { "`$_`" } @$fields if $fields;
+  # defaults
+  $fields ||= ['*'];
+  $order ||= 'id';
+  $rule ||= 'DESC';
+  $offset ||= 0;
+  $limit ||= 20;
+  # prepare
+  my $w = ( $where ? join ' and ', $self->_prepare($where) : '1=1' );
+  my $t = $self->{table};
+  my $f = join ',', @$fields;
+  my $q = "SELECT $f FROM `$t` WHERE $w ORDER BY $order $rule LIMIT $offset, $limit";
+  # run
+  my $sth = $main::dbh->prepare($q);
+     $sth->execute();
+  my @result;
+  my $row;
+  push @result, $row while $row = $sth->fetchrow_hashref();
+  return @result;
+}
+
+sub count {
+  my($self, $where) = @_;
+  # Prepare
+  my $w = ( $where ? join ' and ', $self->_prepare($where) : '1=1' );
+  my $t = $self->{table};
+  my $q = "SELECT COUNT(*) FROM `$t` WHERE $w";
+  # Run
+  my $sth = $main::dbh->prepare($q);
+     $sth->execute();
+  my $row = $sth->fetchrow_hashref();
+  return $row->{'COUNT(*)'};
+}
+
+sub raw {
+  my($self, $query) = @_;
+  my $sth = $main::dbh->prepare($query);
+     $sth->execute();
+  my @result;
+  my $row;
+  push @result, $row while $row = $sth->fetchrow_hashref();
+  return @result;
+}
+
+sub _prepare {
+  my($self, $data) = @_;
+  my @data;
+  
+  while(my($k, $v) = each %$data) {
+    push @data, sprintf "`%s`=%s", $k, $main::dbh->quote($v);
+  }
+  return @data;
+}
+
+package main;
+
+__DATA__
+
+@@ css/style.css
+body { padding-top: 20px; padding-bottom: 20px; }
+.header, .marketing, .footer { padding-left: 15px; padding-right: 15px; }
+.header { border-bottom: 1px solid #e5e5e5; }
+.header h3 { margin-top: 0; margin-bottom: 0; line-height: 40px; padding-bottom: 19px; }
+.footer { padding-top: 19px; color: #777; border-top: 1px solid #e5e5e5; }
+@media (min-width: 768px) {
+  .container { max-width: 730px; }
+}
+.container-narrow > hr { margin: 30px 0; }
+.jumbotron { text-align: center; border-bottom: 1px solid #e5e5e5; }
+.jumbotron .btn { font-size: 21px; padding: 14px 24px; }
+.marketing { margin: 40px 0; }
+.marketing p + h4 { margin-top: 28px; }
+@media screen and (min-width: 768px) {
+  .header, .marketing, .footer { padding-left: 0; padding-right: 0; }
+  .header { margin-bottom: 30px; }
+  .jumbotron { border-bottom: 0; }
+}
+.push { margin-bottom: 20px; }
+.cb { clear: both; }
+.prio { width: 20px; min-height: 20px; margin-right: 10px; border: 1px solid #ddd; float: left; }
+.task { background: #f0f0f0; border: 1px solid #e8e8e8; border-radius: 3px; margin: 10px 0px; padding: 5px; }
+.task p { margin: 10px; font-size: 20px; }
+
+@@ index.html.ep
+% layout 'default';
+<div class="jumbotron">
+<h1>Organize your life</h1>
+<p class="lead">
+  Don't waste your time! Plan it, organize.<br>
+  Use your time more usefully!<br>
+  Blah-blah-blah...
+</p>
+<p><a class="btn btn-lg btn-success" href="/user/login" role="button">Sign up today</a></p>
+</div>
+
+@@ login.html.ep
+% layout 'default';
+<div class="jumbotron">
+<h1>Login to organizer</h1>
+% if (my $err = flash('error')) {
+  <div class="alert alert-danger"><%= $err %></div>
+% }
+<form action="/user/login" method="post">
+  <div><input type="text" placeholder="E-mail" name="mail"></div>
+  <div><input type="password" placeholder="Password" name="pass"></div>
+  <div><button class="btn btn-submit btn-lg btn-success">Login</button></div>
+</form>
+</div>
+
+@@ my.html.ep
+% layout 'default';
+<h1>My tasks</h1>
+% if (my $msg = flash('success')) {
+  <div class="alert alert-success"><%= $msg %></div>
+% }
+<form action="/user/add" method="post">
+  <div class="row">
+    <div class="col-lg-3">
+      <select name="prio" class="input-group btn btn-default" style="text-align:left;">
+        <option value="0">note</option>
+        <option value="1">todo</option>
+        <option value="2">do it now!</option>
+        <option value="3">AAAAAA!!!</option>
+        <option value="4">People are dying!</option>
+      </select>
+    </div>
+    <div class="col-lg-3">
+      <input class="datepicker form-control" data-date-format="dd.mm.yyyy" placeholder="Deadline" name="deadline">
+    </div>
+    <div class="input-append col-lg-3">
+      <input name="time" class="form-control" type="text" placeholder="Required time">
+      <span class="add-on"><i class="icon-time"></i></span>
+    </div>
+    <div class="col-lg-3">
+      <button type="submit" class="pull-right btn btn-success">Add task</button>
+    </div>
+  </div>
+  <div class="push"></div>
+  <textarea name="message" class="form-control" placeholder="Message"></textarea>
+</form>
+<div class="cb push"></div>
+% for my $task (@$tasks) {
+  <div class="task">
+    <div class="prio" style="background: <%= prio_to_color $task->{prio} %>"></div>
+%   my ($s,$i,$h,$day,$mon,$year) = localtime $task->{deadline};
+%   $mon++; $year += 1900;
+%   $mon = "0$mon" if $mon < 10;
+%   $day = "0$day" if $day < 10;
+    <%= $year %>.<%= $mon %>.<%= $day %>
+%   $h = int ($task->{time} % 86400) / 3600;
+%   my $d = int $task->{time} / 86400;
+    (<%= $d %>d <%= $h %>h)
+    <p><%= $task->{message} %></p>
+  </div>
+% }
+
+@@ layouts/default.html.ep
+<!DOCTYPE html>
+<html>
+  <head>
+    %= javascript "http://yandex.st/jquery/2.0.3/jquery.min.js"
+    %= javascript "https://ajax.googleapis.com/ajax/libs/angularjs/1.2.9/angular.min.js"
+    %= javascript "http://yandex.st/bootstrap/3.0.3/js/bootstrap.min.js"
+    %= javascript "//cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.2.0/js/bootstrap-datepicker.min.js"
+    %= javascript "//cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.2.0/js/locales/bootstrap-datepicker.ru.min.js"
+    %= stylesheet "http://yandex.st/bootstrap/3.0.3/css/bootstrap.min.css"
+    %= stylesheet "//cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.2.0/css/datepicker.min.css"
+    %= stylesheet "/css/style.css"
+    <meta charset="utf-8">
+    <title>Orgy – small and simple organizer</title>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <ul class="nav nav-pills pull-right">
+          
+          <% if (session('id')) { %>
+            <li><a href="/user/my">My tasks</a></li>
+            <li><a href="/user/logout">Logout</a></li>
+          <% } else { %>
+            <li><a href="/user/login">Login</a></li>
+          <% } %>
+          
+        </ul>
+        <h3><a href="/" class="text-muted">Orgy – small and simple organizer</a></h3>
+      </div>
+      <%= content %>
+      <div class="footer">
+        <p>&copy; Orgy 2014</p>
+      </div>
+    </div>
+    <script type="text/javascript">
+      $(function() {
+        $('.datepicker').datepicker();
+      });
+    </script>
+  </body>
+</html>
