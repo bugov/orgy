@@ -40,6 +40,29 @@ post '/user/login' => sub {
   }
 };
 
+get '/user/regme' => sub { shift->render('reg') };
+
+post '/user/regme-now' => sub {
+  my $self = shift;
+  my ($name, $mail, $pass) = ($self->param('name'), $self->param('mail'), $self->param('pass'));
+  
+  my $user = mdl->new('user')->read(mail => $mail);
+  return $self->flash(error => "User already exists!")->redirect_to('/user/login') if $user;
+  $user = mdl->new('user')->read(name => $name);
+  return $self->flash(error => "User already exists!")->redirect_to('/user/login') if $user;
+  
+  my $salt = substr(md5_hex(rand), 0, 8);
+  $pass = $salt.'$'.md5_hex($pass.$salt);
+  
+  mdl->new('user')->create({
+    name => $name, mail => $mail,
+    pass => $pass, role => 'user',
+  });
+  
+  $user = mdl->new('user')->read(mail => $mail);
+  $self->session(%$user)->redirect_to('/user/my');
+};
+
 group {
   under '/user' => sub { shift->session('role') ~~ ['user', 'admin'] };
   get '/my' => sub {
@@ -230,7 +253,7 @@ body { padding-top: 20px; padding-bottom: 20px; }
   Use your time more usefully!<br>
   Blah-blah-blah...
 </p>
-<p><a class="btn btn-lg btn-success" href="/user/login" role="button">Sign up today</a></p>
+<p><a class="btn btn-lg btn-success" onclick="window.location='/user/regme'" role="button">Sign up today</a></p>
 </div>
 
 @@ login.html.ep
@@ -244,6 +267,21 @@ body { padding-top: 20px; padding-bottom: 20px; }
   <div><input type="text" placeholder="E-mail" name="mail"></div>
   <div><input type="password" placeholder="Password" name="pass"></div>
   <div><button class="btn btn-submit btn-lg btn-success">Login</button></div>
+</form>
+</div>
+
+@@ reg.html.ep
+% layout 'default';
+<div class="jumbotron">
+<h1>Sign up to organizer</h1>
+% if (my $err = flash('error')) {
+  <div class="alert alert-danger"><%= $err %></div>
+% }
+<form action="/usr" method="post">
+  <div><input type="text" placeholder="Name" name="name"></div>
+  <div><input type="text" placeholder="E-mail" name="mail"></div>
+  <div><input type="password" placeholder="Password" name="pass"></div>
+  <div><button onclick="$(this).parent().parent().attr('action', '/user/regme'+'-now')" class="btn btn-submit btn-lg btn-success">Login</button></div>
 </form>
 </div>
 
