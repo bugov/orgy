@@ -116,6 +116,15 @@ helper prio_to_color => sub {
   return $colors->[$prio];
 };
 
+helper render_user => sub {
+  my ($self, $user) = @_;
+  $user = mdl->new('user')->read({id => $user}) unless ref $user eq 'HASH';
+  my $pic = sprintf '<img class=userpic_small src="http://www.gravatar.com/avatar/%s?s=%s">',
+            md5_hex(lc($user->{mail}||'')), 20;
+  my $url = $user->{id} != $self->session('id') ? app->url_for('profile', id => $user->{id}) : app->url_for('my');
+  return new Mojo::ByteStream(sprintf '<a href="%s">%s %s</a>', $url||'', $pic||'', $user->{name}||'');
+};
+
 app->start;
 
 # Simple CRUDL
@@ -396,6 +405,7 @@ body { padding-top: 20px; padding-bottom: 20px; }
 %   $h = int ($task->{time} / 3600) % 24;
 %   my $d = int ($h / 24);
     (<%= $d %>d <%= $h %>h)
+    <div class="pull-right"><%= render_user $task->{user_id} %></div>
     <p><%= $task->{message} %></p>
   </div>
 
