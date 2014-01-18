@@ -72,23 +72,39 @@ group {
     $self->render('my', tasks => \@tasks);
   };
   
+  post '/my' => sub {
+    my $self = shift;
+    my ($year, $mon, $mday) = split(/[\s.:]+/, $self->param('from'));
+    $year ||= '1970'; $mon ||= 1; $mday ||= 1;
+    my $from = timelocal(0,0,23,$mday,$mon-1,$year);
+    ($year, $mon, $mday) = split(/[\s.:]+/, $self->param('till'));
+    $year ||= '138'; $mon ||= 1; $mday ||= 1;
+    my $till = timelocal(0,0,0,$mday,$mon-1,$year);
+    return $self->redirect_to('period', from => $from, till => $till);
+  };
+  
+  get '/my/:from/:till' => sub {
+    my $self = shift;
+    my ($from, $till) = (int $self->param('from'), int $self->param('till'));
+    my @tasks = mdl->new('task')->raw("SELECT * FROM `task` WHERE `user_id`=".$self->session('id')
+      ." AND `deadline` > $from AND `deadline` < $till ORDER BY `deadline` DESC");
+    $self->render('my', tasks => \@tasks, from => $from, till => $till);
+  } => 'period';
+  
   post '/add' => sub {
     my $self = shift;
     my ($prio, $dl, $time, $message) = ($self->param('prio'), $self->param('deadline'),
                                         $self->param('time'), $self->param('message'));
-    my ($mday,$mon,$year,$hour,$min,$sec) = split(/[\s.:]+/, $dl);
-    $dl = timelocal($sec,$min,$hour,$mday,$mon-1,$year);
+    my ($year, $mon, $mday) = split(/[\s.:]+/, $dl);
+    $dl = timelocal(0,0,0,$mday,$mon-1,$year);
     my ($val, $type) = ($time =~ /(\d+)([hd]?)/i);
     $val *= 3600  if $type eq 'h'; # hour
     $val *= 86400 if $type eq 'd'; # day
     
     mdl->new('task')->create({
-      prio => $prio,
-      deadline => $dl,
-      time => $val,
-      message => $message,
-      user_id => $self->session('id'),
-      status => 0
+      prio => $prio, deadline => $dl, time => $val,
+      message => $message, user_id => $self->session('id'),
+      status => 0, create_at => time
     });
     $self->flash(success => 'Task created')->redirect_to('/user/my');
   };
@@ -303,7 +319,38 @@ body { padding-top: 20px; padding-bottom: 20px; }
 
 @@ my.html.ep
 % layout 'default';
-<h1>My tasks</h1>
+% no strict;
+% if ( $from ) {
+%   my ($s,$i,$h,$d,$m,$y) = localtime int $from;
+%   $m++; $y += 1900;
+%   $m = "0$m" if $m < 10;
+%   $d = "0$d" if $d < 10;
+%   $from = "$y.$m.$d"
+% } else { $from = '' }
+% if ( $till ) {
+%   my ($s,$i,$h,$d,$m,$y) = localtime int $till;
+%   $m++; $y += 1900;
+%   $m = "0$m" if $m < 10;
+%   $d = "0$d" if $d < 10;
+%   $till = "$y.$m.$d"
+% } else { $till = '' }
+
+<h1 class="col-lg-3" style="margin-top: -6px;">My tasks</h1>
+<form action="/user/my" method="post">
+    <div class="input-append col-lg-2" style="text-align: right; font-size: 24px;">Period:</div>
+    <div class="input-append col-lg-3">
+      <input name="from" class="form-control datepicker" type="text" value="<%= $from %>" data-date-format="yyyy.mm.dd" placeholder="from">
+      <span class="add-on"><i class="icon-time"></i></span>
+    </div>
+    <div class="input-append col-lg-3">
+      <input name="till" class="form-control datepicker" type="text" value="<%= $till %>" data-date-format="yyyy.mm.dd" placeholder="till">
+      <span class="add-on"><i class="icon-time"></i></span>
+    </div>
+    <button type="submit" class="pull-right btn btn-success">Find</button>
+</form>
+    
+<div class="cb"></div>
+<hr>
 % if (my $msg = flash('success')) {
   <div class="alert alert-success"><%= $msg %></div>
 % }
@@ -319,14 +366,14 @@ body { padding-top: 20px; padding-bottom: 20px; }
       </select>
     </div>
     <div class="col-lg-3">
-      <input class="datepicker form-control" data-date-format="dd.mm.yyyy" placeholder="Deadline" name="deadline">
+      <input class="datepicker form-control" data-date-format="yyyy.mm.dd" placeholder="Deadline" name="deadline">
     </div>
     <div class="input-append col-lg-3">
       <input name="time" class="form-control" type="text" placeholder="Required time">
       <span class="add-on"><i class="icon-time"></i></span>
     </div>
     <div class="col-lg-3">
-      <button type="submit" class="pull-right btn btn-success">Add task</button>
+      <button type="submit" style="width: 100%" class="pull-right btn btn-success">Add task</button>
     </div>
   </div>
   <div class="push"></div>
