@@ -44,7 +44,7 @@ group {
   under '/user' => sub { shift->session('role') ~~ ['user', 'admin'] };
   get '/my' => sub {
     my $self = shift;
-    my @tasks = mdl->new('task')->list({user_id => $self->session('id')});
+    my @tasks = mdl->new('task')->list({user_id => $self->session('id'), status => 0}, undef, 'deadline');
     $self->render('my', tasks => \@tasks);
   };
   post '/add' => sub {
@@ -62,7 +62,8 @@ group {
       deadline => $dl,
       time => $val,
       message => $message,
-      user_id => $self->session('id')
+      user_id => $self->session('id'),
+      status => 0
     });
     $self->flash(success => 'Task created')->redirect_to('/user/my');
   };
@@ -256,11 +257,11 @@ body { padding-top: 20px; padding-bottom: 20px; }
   <div class="row">
     <div class="col-lg-3">
       <select name="prio" class="input-group btn btn-default" style="text-align:left;">
-        <option value="0">note</option>
-        <option value="1">todo</option>
-        <option value="2">do it now!</option>
-        <option value="3">AAAAAA!!!</option>
-        <option value="4">People are dying!</option>
+        <option value="1">note</option>
+        <option value="2">todo</option>
+        <option value="3">do it now!</option>
+        <option value="4">AAAAAA!!!</option>
+        <option value="5">People are dying!</option>
       </select>
     </div>
     <div class="col-lg-3">
@@ -327,7 +328,7 @@ body { padding-top: 20px; padding-bottom: 20px; }
       </div>
       <%= content %>
       <div class="footer">
-        <p>&copy; Orgy 2014</p>
+        <p>&copy; <a href="https://github.com/bugov/orgy">Orgy</a> 2014</p>
       </div>
     </div>
     <script type="text/javascript">
