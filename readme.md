@@ -1,6 +1,6 @@
 # Name
 
-Orgy a tiny organizer.
+Orgy a tiny organizer. [Demo](http://bugov.net:3456).
 
 # Requires
 
