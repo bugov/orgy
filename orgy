@@ -6,6 +6,8 @@ use Digest::MD5 qw(md5_hex);
 use Time::Local;
 use HTML::CalendarMonthSimple;
 
+app->secrets(['Orgy!@#$secret*&^%']);
+
 our $dbh = DBI->connect("dbi:SQLite:dbname=./db",'','',{RaiseError => 1, mysql_enable_utf8 => 1, sqlite_unicode => 1}) or die $DBI::errstr;
 
 if ($ARGV[0] eq 'install') {
