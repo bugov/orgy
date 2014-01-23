@@ -5,8 +5,7 @@ use DBI;
 use Digest::MD5 qw(md5_hex);
 use Time::Local;
 use HTML::CalendarMonthSimple;
-
-our $dbh = DBI->connect("dbi:SQLite:dbname=./db",'','',{RaiseError => 1, mysql_enable_utf8 => 1, sqlite_unicode => 1}) or die $DBI::errstr;
+our $VERSION = "0.2";
 
 # If runs with out params show usage.
 # app->start shows mojo usage.
@@ -15,7 +14,8 @@ Orgy a tiny organizer.
 
 Requires:
   * sqlite3
-  * cpan modules: Mojolicious DBI Time::Local Digest::MD5 DBD::SQLite HTML::CalendarMonthSimple
+  * cpan modules: Mojolicious DBI Time::Local Digest::MD5
+                  DBD::SQLite HTML::CalendarMonthSimple
 
 Installation:
   ./orgy install NAME E-MAIL PASS
@@ -23,9 +23,18 @@ Installation:
 Running:
 Usage
 
+# Prevent use without installation.
+say("Need install first. Run ./orgy for more info."), exit if !-f "./db" && $ARGV[0] ne 'install';
+
+# Init db connection.
+our $dbh = DBI->connect("dbi:SQLite:dbname=./db",'','',{RaiseError => 1, mysql_enable_utf8 => 1, sqlite_unicode => 1}) or die $DBI::errstr;
+
 # Install orgy
 # For example: ./orgy user user@e-mail password
 if ($ARGV[0] eq 'install') {
+  # Check params of installation.
+  say("Please define name, e-mail, password for first user!"), exit if @ARGV < 4;
+  # Go!
   my ($name, $mail, $pass, $salt) = (@ARGV[1..3], substr(md5_hex(rand), 0, 8));
   $pass = $salt.'$'.md5_hex($pass.$salt);
   mdl->new->raw('');
