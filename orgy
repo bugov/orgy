@@ -6,10 +6,25 @@ use Digest::MD5 qw(md5_hex);
 use Time::Local;
 use HTML::CalendarMonthSimple;
 
-app->secrets(['Orgy!@#$secret*&^%']);
-
 our $dbh = DBI->connect("dbi:SQLite:dbname=./db",'','',{RaiseError => 1, mysql_enable_utf8 => 1, sqlite_unicode => 1}) or die $DBI::errstr;
 
+# If runs with out params show usage.
+# app->start shows mojo usage.
+say(<<"Usage"), app->start, exit unless @ARGV;
+Orgy a tiny organizer.
+
+Requires:
+  * sqlite3
+  * cpan modules: Mojolicious DBI Time::Local Digest::MD5 DBD::SQLite HTML::CalendarMonthSimple
+
+Installation:
+  ./orgy install NAME E-MAIL PASS
+  
+Running:
+Usage
+
+# Install orgy
+# For example: ./orgy user user@e-mail password
 if ($ARGV[0] eq 'install') {
   my ($name, $mail, $pass, $salt) = (@ARGV[1..3], substr(md5_hex(rand), 0, 8));
   $pass = $salt.'$'.md5_hex($pass.$salt);
@@ -22,6 +37,7 @@ if ($ARGV[0] eq 'install') {
   exit;
 }
 
+# Public part of orgy.
 get '/' => sub { shift->render('index') };
 get '/user/login' => sub { shift->render('login') };
 get '/user/logout' => sub { shift->session(id => 0)->redirect_to('/') };
@@ -66,6 +82,7 @@ post '/user/regme-now' => sub {
   $self->session(%$user)->redirect_to('my');
 };
 
+# Only for registred users.
 group {
   under '/user' => sub { $_[0]->session('role') ~~ ['user', 'admin'] ? 1 : $_[0]->render_not_found & 0 };
   
@@ -113,12 +130,18 @@ group {
   };
 };
 
+# Colors of priotities.
+# Returns Str
 helper prio_to_color => sub {
   my ($self, $prio) = @_;
   my $colors = ['#fff', '#999', '#428BCA', '#F0AD4E', '#D9534F', '#000'];
   return $colors->[$prio];
 };
 
+# Get user gravatar
+# and render it with username.
+# $user - id or hash ref.
+# Returns Mojo::ByteStream
 helper render_user => sub {
   my ($self, $user) = @_;
   $user = mdl->new('user')->read({id => $user}) unless ref $user eq 'HASH';
@@ -128,6 +151,11 @@ helper render_user => sub {
   return new Mojo::ByteStream(sprintf '<a href="%s">%s %s</a>', $url||'', $pic||'', $user->{name}||'');
 };
 
+# Render organizer page.
+# List of tasks if one day selected.
+# Calendar if more than one day has tasks.
+# $tasks - array ref of hashes (tasks)
+# Returns Mojo::ByteStream
 helper render_cal => sub {
   my ($self, $tasks) = @_;
   return unless @$tasks;
@@ -171,30 +199,37 @@ app->start;
 # Simple CRUDL
 package mdl;
 
+# Create mdl object by table name.
+# $table_name - str
 sub new {
   my($class, $table_name) = @_;
   return bless({table => $table_name}, $class);
 }
 
+# Insert one row into table.
+# $data - hash ref - row's columns.
+# Returns int - id of inserted row.
 sub create {
   my $self = shift;
   my $data = shift;
   
   while(my($k, $v) = each %$data) {
-      $data->{$k} = $main::dbh->quote($v);
+    $data->{$k} = $main::dbh->quote($v);
   }
-  
   my $t = $self->{table};
   my $k = join '`,`', keys %$data;
   my $v = join ",", values %$data;
   
   $main::dbh->do("INSERT INTO `$t`(`$k`) VALUES($v)");
   my $sth = $main::dbh->prepare("SELECT last_insert_rowid()");
-     $sth->execute();
+    $sth->execute();
   my $row = $sth->fetchrow_hashref();
   return $row->{'last_insert_rowid()'};
 }
 
+# Get row from table.
+# $w, $f - hash ref(where), array ref(fields)
+# Returns hash ref
 sub read {
   my($self, $w, $f) = @_;
   ($w, $f) = ( {$w, $f}, undef ) if ref $w ne 'HASH';
@@ -202,6 +237,8 @@ sub read {
   return [ $self->list($w, $f, $order, undef, 0, 1) ]->[0];
 }
 
+# Edit rowset.
+# $data, $where - hash ref(new data), hash ref(where)
 sub update {
   my($self, $data, $where) = @_;
   my @where = $self->_prepare($where);
@@ -212,48 +249,51 @@ sub update {
   $main::dbh->do("UPDATE `$t` SET $d WHERE $w");
 }
 
+# Remove rowset
+# $where
 sub delete {
   my($self, $where) = @_;
   my @where;
   
-  if ( $where ) {
+  if ($where) {
     @where = $self->_prepare($where);
   } else {
     push @where, '1=1';
   }
-  
   my $t = $self->{table};
   my $w = join ' and ', @where;
   $main::dbh->do("DELETE FROM `$t` WHERE $w");
 }
 
+# Get rowset.
+# $where, $fields, $order, $rule, $offset, $limit
+#   - hash ref, array ref, str, str, int, int
+# Returns array
 sub list {
   my($self, $where, $fields, $order, $rule, $offset, $limit) = @_;
   @$fields = map { "`$_`" } @$fields if $fields;
   # defaults
-  $fields ||= ['*'];
-  $order ||= 'id';
-  $rule ||= 'DESC';
-  $offset ||= 0;
-  $limit ||= 20;
+  $fields ||= ['*']; $order ||= 'id'; $rule ||= 'DESC'; $offset ||= 0; $limit ||= 20;
   # prepare
-  my $w = ( $where ? join ' and ', $self->_prepare($where) : '1=1' );
+  my $w = $where ? join ' and ', $self->_prepare($where) : '1=1';
   my $t = $self->{table};
   my $f = join ',', @$fields;
   my $q = "SELECT $f FROM `$t` WHERE $w ORDER BY $order $rule LIMIT $offset, $limit";
   # run
   my $sth = $main::dbh->prepare($q);
-     $sth->execute();
-  my @result;
-  my $row;
+    $sth->execute();
+  my (@result, $row);
   push @result, $row while $row = $sth->fetchrow_hashref();
   return @result;
 }
 
+# Get size of rowset.
+# $where - hash ref
+# Returns int.
 sub count {
   my($self, $where) = @_;
   # Prepare
-  my $w = ( $where ? join ' and ', $self->_prepare($where) : '1=1' );
+  my $w = $where ? join ' and ', $self->_prepare($where) : '1=1';
   my $t = $self->{table};
   my $q = "SELECT COUNT(*) FROM `$t` WHERE $w";
   # Run
@@ -263,6 +303,9 @@ sub count {
   return $row->{'COUNT(*)'};
 }
 
+# Run raw sql query.
+# $query - str
+# returns array - results
 sub raw {
   my($self, $query) = @_;
   my $sth = $main::dbh->prepare($query);
@@ -273,6 +316,9 @@ sub raw {
   return @result;
 }
 
+# Prepare data for query.
+# $data - hash ref
+# Returns array - prepared data.
 sub _prepare {
   my($self, $data) = @_;
   my @data;
