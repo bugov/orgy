@@ -1,4 +1,9 @@
 #!/usr/bin/env perl
+
+# Copyright (C) 2014, Georgy Bazhukov.
+# This program is free software, you can redistribute it and/or modify it
+# under the terms of the Artistic License version 2.0.
+
 use Mojolicious::Lite;
 use utf8;
 use DBI;
