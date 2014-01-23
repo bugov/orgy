@@ -152,6 +152,25 @@ helper prio_to_color => sub {
   return $colors->[$prio];
 };
 
+# Content preprocessor
+# $text - Str
+# Returns Mojo::ByteStream
+helper p => sub {
+  my ($self, $text) = @_;
+  # escape string
+  $text =~ s/</&lt;/g;
+  $text =~ s/>/&gt;/g;
+  $text =~ s/'/&#39;/g;
+  # dashes
+  $text =~ s/ - / &ndash; /g;
+  $text =~ s/ -- / &mdash; /g;
+  # tags
+  $text =~ s{(#([\w\d\-_]+))}{<a href="/user/my/tag/$2">$1</a>}g;
+  # links
+  $text=~ s{(^|[^"])((?:http|ftp|https)://[a-z0-9\-\/\.=&\?\%_@#:+]+)}{$1<a href="$2">$2</a>}ig;
+  return new Mojo::ByteStream($text);
+};
+
 # Get user gravatar
 # and render it with username.
 # $user - id or hash ref.
@@ -508,7 +527,7 @@ body { padding-top: 20px; padding-bottom: 20px; }
 %   my $d = int ($h / 24);
     (<%= $d %>d <%= $h %>h)
     <div class="pull-right"><%= render_user $task->{user_id} %></div>
-    <p><%= $task->{message} %></p>
+    <p><%=p $task->{message} %></p>
   </div>
 
 @@ layouts/default.html.ep
