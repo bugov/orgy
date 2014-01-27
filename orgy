@@ -118,7 +118,17 @@ group {
     return $self->redirect_to('period', from => $from, till => $till);
   };
   
-  get '/my/:from/:till' => sub {
+  get '/my/tag/:tag' => sub {
+    my $self = shift;
+    my $tag_name = $self->param('tag');
+    my $tag = mdl->new('tag')->read({name => $tag_name, user_id => $self->session('id')})
+      || return $self->render_not_found;
+    my @ids = map {$_->{task_id}} mdl->new('tag2task')->list({tag_id => $tag->{id}}, ['task_id']);
+    my @tasks = mdl->new('task')->raw('SELECT * FROM `task` WHERE `id` IN('.join(',', @ids).')');
+    $self->render('my', tasks => \@tasks);
+  } => 'my_tag';
+  
+  get '/my/:from/:till', [from => qr/\d+/, till => qr/\d+/] => sub {
     my $self = shift;
     my ($from, $till) = (int $self->param('from'), int $self->param('till'));
     my @tasks = mdl->new('task')->raw("SELECT * FROM `task` WHERE `user_id`=".$self->session('id')
@@ -136,15 +146,18 @@ group {
     $val *= 3600  if $type eq 'h'; # hour
     $val *= 86400 if $type eq 'd'; # day
     
-    for my $tag ($message =~ m/#([\w\d\-_]+)/g) {
-      my $tbl = mdl->new('tag');
-    }
-    
-    mdl->new('task')->create({
+    my $task_id = mdl->new('task')->create({
       prio => $prio, deadline => $dl, time => $val,
       message => $message, user_id => $self->session('id'),
       status => 0, create_at => time
     });
+    
+    for my $tag ($message =~ m/#([\w\d\-_]+)/g) {
+      my $tagObj = mdl->new('tag')->read({name => $tag, user_id => $self->session('id')});
+      my $id = $tagObj ? $tagObj->{id} : undef;
+      $id = mdl->new('tag')->create({name => $tag, user_id => $self->session('id')}) unless $tagObj;
+      mdl->new('tag2task')->create({tag_id => $id, task_id => $task_id});
+    }
     $self->flash(success => 'Task created')->redirect_to('/user/my');
   };
 };
