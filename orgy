@@ -118,6 +118,16 @@ group {
     return $self->redirect_to('period', from => $from, till => $till);
   };
   
+  post '/my/task' => sub {
+    my $self = shift;
+    my ($id, $field, $val) = ($self->param('id'), $self->param('field'), $self->param('val'));
+    my $task = mdl->new('task')->read({id => $id});
+    return $self->render(json => {error => "Access denied"})
+      if $self->session('id') != $task->{user_id} || $field ~~ ['id', 'user_id'] || $field !~ /^[\w\d_\-]+$/;
+    mdl->new('task')->update({$field => $val}, {id => $id});
+    return $self->render(json => {success => "Task edited"});
+  };
+  
   get '/my/tag/:tag' => sub {
     my $self = shift;
     my $tag_name = $self->param('tag');
@@ -410,6 +420,7 @@ body { padding-top: 20px; padding-bottom: 20px; }
 .task p { margin: 10px; font-size: 20px; }
 .cal td, .cal th { padding: 5px; }
 .cal table { border: 0px solid #888; color: #888; border-radius: 5px; margin: 20px 0px; }
+.message-box { position: fixed; bottom: 20px; right: 20px; display: none; padding: 10px; font-size: 18px; border-radius: 5px;}
 
 @@ index.html.ep
 % layout 'default';
@@ -544,6 +555,14 @@ body { padding-top: 20px; padding-bottom: 20px; }
 %   $h = int ($task->{time} / 3600) % 24;
 %   my $d = int ($h / 24);
     (<%= $d %>d <%= $h %>h)
+    <div class="col-lg-2">
+      <select name="status" data-id="<%= $task->{id} %>" data-type="task"
+        class="update-on-change input-group btn btn-xs" style="text-align:left;">
+        <option value="0">open</option>
+        <option value="1">done</option>
+        <option value="2">won't fix</option>
+      </select>
+    </div>
     <div class="pull-right"><%= render_user $task->{user_id} %></div>
     <p><%=p $task->{message} %></p>
   </div>
@@ -566,6 +585,7 @@ body { padding-top: 20px; padding-bottom: 20px; }
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
   </head>
   <body>
+    <div class="message-box"></div>
     <div class="container">
       <div class="header">
         <ul class="nav nav-pills pull-right">
@@ -588,6 +608,20 @@ body { padding-top: 20px; padding-bottom: 20px; }
     <script type="text/javascript">
       $(function() {
         $('.datepicker').datepicker();
+        
+        $('.update-on-change').change(function() {
+          var type = $(this).attr('data-type');
+          var val = $(this).val();
+          var field = $(this).attr('name');
+          var id = $(this).attr('data-id');
+          
+          $.post('/user/my/'+type+'.json', { field: field, val: val, id: id }, function(data) {
+            if ('error' in data)
+              $('.message-box').removeClass('alert-success').addClass('alert-danger').text(data.error).fadeIn(500).delay(5000).fadeOut(500);
+            if ('success' in data)
+              $('.message-box').removeClass('alert-danger').addClass('alert-success').text(data.success).fadeIn(500).delay(5000).fadeOut(500);
+          });
+        });
       });
     </script>
   </body>
