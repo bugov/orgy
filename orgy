@@ -53,7 +53,12 @@ if ($ARGV[0] eq 'install') {
 }
 
 # Public part of orgy.
-get '/' => sub { shift->render('index') };
+get '/' => sub {
+  my $self = shift;
+  $self->session('id') ?
+    $self->redirect_to('my') :
+    $self->render('index')
+};
 get '/user/login' => sub { shift->render('login') };
 get '/user/logout' => sub { shift->session(id => 0)->redirect_to('/') };
 
