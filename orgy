@@ -557,9 +557,9 @@ body { padding-top: 20px; padding-bottom: 20px; }
     <div class="col-lg-2">
       <select name="status" data-id="<%= $task->{id} %>" data-type="task"
         class="update-on-change input-group btn btn-xs" style="text-align:left;">
-        <option value="0">open</option>
-        <option value="1">done</option>
-        <option value="2">won't fix</option>
+        <option value="0"<% if ($task->{status} == 0) { %> selected="selected" <% } %>>open</option>
+        <option value="1"<% if ($task->{status} == 1) { %> selected="selected" <% } %>>done</option>
+        <option value="2"<% if ($task->{status} == 2) { %> selected="selected" <% } %>>won't fix</option>
       </select>
     </div>
     <div class="pull-right"><%= render_user $task->{user_id} %></div>
