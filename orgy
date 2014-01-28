@@ -421,6 +421,25 @@ body { padding-top: 20px; padding-bottom: 20px; }
 .cal table { border: 0px solid #888; color: #888; border-radius: 5px; margin: 20px 0px; }
 .message-box { position: fixed; bottom: 20px; right: 20px; display: none; padding: 10px; font-size: 18px; border-radius: 5px;}
 
+@@ js/script.js
+$(document).ready(function() {
+  $('.datepicker').datepicker();
+  
+  $('.update-on-change').change(function() {
+    var type = $(this).attr('data-type');
+    var val = $(this).val();
+    var field = $(this).attr('name');
+    var id = $(this).attr('data-id');
+    
+    $.post('/user/my/'+type+'.json', { field: field, val: val, id: id }, function(data) {
+      if ('error' in data)
+        $('.message-box').removeClass('alert-success').addClass('alert-danger').text(data.error).fadeIn(500).delay(5000).fadeOut(500);
+      if ('success' in data)
+        $('.message-box').removeClass('alert-danger').addClass('alert-success').text(data.success).fadeIn(500).delay(5000).fadeOut(500);
+    });
+  });
+});
+
 @@ index.html.ep
 % layout 'default';
 <div class="jumbotron">
@@ -575,6 +594,7 @@ body { padding-top: 20px; padding-bottom: 20px; }
     %= javascript "http://yandex.st/bootstrap/3.0.3/js/bootstrap.min.js"
     %= javascript "//cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.2.0/js/bootstrap-datepicker.min.js"
     %= javascript "//cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.2.0/js/locales/bootstrap-datepicker.ru.min.js"
+    %= javascript "/js/script.js"
     %= stylesheet "http://yandex.st/bootstrap/3.0.3/css/bootstrap.min.css"
     %= stylesheet "//cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.2.0/css/datepicker.min.css"
     %= stylesheet "/css/style.css"
@@ -604,24 +624,5 @@ body { padding-top: 20px; padding-bottom: 20px; }
         <p>&copy; <a href="https://github.com/bugov/orgy">Orgy</a> 2014</p>
       </div>
     </div>
-    <script type="text/javascript">
-      $(function() {
-        $('.datepicker').datepicker();
-        
-        $('.update-on-change').change(function() {
-          var type = $(this).attr('data-type');
-          var val = $(this).val();
-          var field = $(this).attr('name');
-          var id = $(this).attr('data-id');
-          
-          $.post('/user/my/'+type+'.json', { field: field, val: val, id: id }, function(data) {
-            if ('error' in data)
-              $('.message-box').removeClass('alert-success').addClass('alert-danger').text(data.error).fadeIn(500).delay(5000).fadeOut(500);
-            if ('success' in data)
-              $('.message-box').removeClass('alert-danger').addClass('alert-success').text(data.success).fadeIn(500).delay(5000).fadeOut(500);
-          });
-        });
-      });
-    </script>
   </body>
 </html>
